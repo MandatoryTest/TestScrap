@@ -114,11 +114,10 @@ max_price = st.number_input("💰 Prix maximum (€)", min_value=0, step=1000)
 if url:
     with st.spinner("🔄 Scraping en cours..."):
         current_annonces = get_annonces(url)
-        previous_annonces = load_previous()
-        nouvelles = detect_delta(current_annonces, previous_annonces)
-        filtered = filter_annonces(nouvelles, keyword, min_price, max_price)
+        filtered = filter_annonces(current_annonces, keyword, min_price, max_price)
 
-    st.subheader(f"🆕 {len(filtered)} nouvelles annonces détectées")
+
+    st.subheader(f"📊 {len(filtered)} annonces trouvées")
     if filtered:
         df = pd.DataFrame(filtered)
         for a in filtered:
