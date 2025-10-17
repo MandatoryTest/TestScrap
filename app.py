@@ -5,22 +5,63 @@ import hashlib
 import json
 import os
 import pandas as pd
+import re
 
 STORAGE_FILE = "annonces_seloger.json"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+def extract_price(text):
+    match = re.search(r"(\d[\d\s,.]*)\s*€", text)
+    if match:
+        try:
+            return int(match.group(1).replace(" ", "").replace(",", ""))
+        except:
+            return None
+    return None
+
 def get_annonces(url):
     response = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(response.text, "html.parser")
-    annonces = soup.select(".c-pa-list__item")  # À adapter si structure change
+    cards = soup.select("div[data-testid='serp-core-classified-card-testid']")
     results = []
-    for a in annonces:
-        title = a.text.strip()
-        link_tag = a.find("a")
-        link = link_tag["href"] if link_tag else "#"
-        hash_id = hashlib.md5(title.encode()).hexdigest()
-        results.append({"id": hash_id, "title": title, "link": link})
+
+    for card in cards:
+        try:
+            # Lien
+            link_tag = card.select_one("a[data-testid='card-mfe-covering-link-testid']")
+            link = link_tag["href"] if link_tag else "#"
+
+            # Titre (contenu de l'attribut title du lien)
+            title = link_tag["title"].strip() if link_tag and link_tag.has_attr("title") else "Annonce sans titre"
+
+            # Description
+            desc_tag = card.select_one("div[data-testid='cardmfe-description-text-test-id']")
+            description = desc_tag.text.strip() if desc_tag else ""
+
+            # Adresse
+            address_tag = card.select_one("div[data-testid='cardmfe-description-box-address']")
+            address = address_tag.text.strip() if address_tag else ""
+
+            # Prix (extraction via regex)
+            price = extract_price(title)
+
+            # ID unique
+            hash_id = hashlib.md5((title + link).encode()).hexdigest()
+
+            results.append({
+                "id": hash_id,
+                "title": title,
+                "link": link,
+                "description": description,
+                "address": address,
+                "price": price
+            })
+        except Exception as e:
+            print(f"Erreur lors du parsing d'une carte: {e}")
+            continue
+
     return results
+
 
 def load_previous():
     if os.path.exists(STORAGE_FILE):
