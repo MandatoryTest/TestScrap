@@ -11,6 +11,7 @@ from datetime import datetime
 STORAGE_FILE = "annonces_seloger.json"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+# 🔍 Extraction du prix
 def extract_price(text):
     match = re.search(r"(\d[\d\s,.]*)\s*€", text)
     if match:
@@ -20,39 +21,59 @@ def extract_price(text):
             return None
     return None
 
+# 🧩 Parsing d'une annonce
+def parse_annonce(card):
+    try:
+        link_tag = card.select_one("a[data-testid='card-mfe-covering-link-testid']")
+        title = link_tag["title"].strip() if link_tag and link_tag.has_attr("title") else "Sans titre"
+        link = link_tag["href"] if link_tag else "#"
+
+        address_tag = card.select_one("div[data-testid='cardmfe-description-box-address']")
+        address = address_tag.text.strip() if address_tag else ""
+
+        description_tag = card.select_one("div[data-testid='cardmfe-description-text-test-id']")
+        description = description_tag.text.strip() if description_tag else ""
+
+        price_tag = card.select_one("div[data-testid='cardmfe-price-testid']")
+        price_text = price_tag.text.strip() if price_tag else title
+        price = extract_price(price_text)
+
+        keyfacts = card.select("div[data-testid='cardmfe-keyfacts-testid'] .css-9u48bm")
+        keyfacts_text = " · ".join([k.text.strip() for k in keyfacts]) if keyfacts else ""
+
+        image_tags = card.select("img.css-hclm2j")
+        images = [img["src"] for img in image_tags if img.has_attr("src")]
+
+        agency_tag = card.select_one("div[data-testid*='agency-publisher']")
+        agency = agency_tag.text.strip() if agency_tag else ""
+
+        hash_id = hashlib.md5((title + link).encode()).hexdigest()
+
+        return {
+            "id": hash_id,
+            "title": title,
+            "link": link,
+            "address": address,
+            "description": description,
+            "price": price,
+            "keyfacts": keyfacts_text,
+            "images": images,
+            "agency": agency,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        print(f"Erreur parsing annonce: {e}")
+        return None
+
+# 🔄 Scraping de la page
 def get_annonces(url):
     response = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(response.text, "html.parser")
     cards = soup.select("div[data-testid='serp-core-classified-card-testid']")
-    results = []
+    results = [parse_annonce(card) for card in cards]
+    return [r for r in results if r is not None]
 
-    for card in cards:
-        try:
-            link_tag = card.select_one("a[data-testid='card-mfe-covering-link-testid']")
-            link = link_tag["href"] if link_tag else "#"
-            title = link_tag["title"].strip() if link_tag and link_tag.has_attr("title") else "Annonce sans titre"
-            description_tag = card.select_one("div[data-testid='cardmfe-description-text-test-id']")
-            description = description_tag.text.strip() if description_tag else ""
-            address_tag = card.select_one("div[data-testid='cardmfe-description-box-address']")
-            address = address_tag.text.strip() if address_tag else ""
-            price = extract_price(title)
-            hash_id = hashlib.md5((title + link).encode()).hexdigest()
-
-            results.append({
-                "id": hash_id,
-                "title": title,
-                "link": link,
-                "description": description,
-                "address": address,
-                "price": price,
-                "timestamp": datetime.now().isoformat()
-            })
-        except Exception as e:
-            print(f"Erreur parsing carte: {e}")
-            continue
-
-    return results
-
+# 📦 Sauvegarde et chargement
 def load_previous():
     if os.path.exists(STORAGE_FILE):
         with open(STORAGE_FILE, "r") as f:
@@ -80,7 +101,7 @@ def filter_annonces(annonces, keyword, min_price, max_price):
         filtered.append(a)
     return filtered
 
-# Interface Streamlit
+# 🖥️ Interface Streamlit
 st.set_page_config(page_title="SeLoger Delta", layout="centered")
 st.title("🏡 Suivi des annonces SeLoger")
 st.markdown("Scraping des annonces visibles sur SeLoger. Fonctionne uniquement avec les pages HTML statiques.")
@@ -101,7 +122,16 @@ if url:
     if filtered:
         df = pd.DataFrame(filtered)
         for a in filtered:
-            st.markdown(f"**[{a['title']}]({a['link']})**  \n📍 {a['address']}  \n💬 {a['description']}  \n💰 {a['price'] if a['price'] else 'Prix inconnu'} €")
+            st.markdown(f"""
+**[{a['title']}]({a['link']})**  
+📍 {a['address']}  
+💬 {a['description']}  
+💰 {a['price']} €  
+📐 {a['keyfacts']}  
+🏢 {a['agency']}  
+""")
+            if a["images"]:
+                st.image(a["images"][0], width=400)
         csv = df.to_csv(index=False).encode("utf-8")
         st.download_button("📥 Télécharger en CSV", data=csv, file_name="nouvelles_annonces.csv", mime="text/csv")
     else:
