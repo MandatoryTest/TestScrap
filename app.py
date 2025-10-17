@@ -1,6 +1,5 @@
 import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+import requests
 from bs4 import BeautifulSoup
 import hashlib
 import json
@@ -10,6 +9,7 @@ import re
 from datetime import datetime
 
 STORAGE_FILE = "annonces_seloger.json"
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 def extract_price(text):
     match = re.search(r"(\d[\d\s,.]*)\s*€", text)
@@ -20,16 +20,9 @@ def extract_price(text):
             return None
     return None
 
-def get_annonces_selenium(url):
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    driver = webdriver.Chrome(options=options)
-    driver.get(url)
-    soup = BeautifulSoup(driver.page_source, "html.parser")
-    driver.quit()
-
+def get_annonces(url):
+    response = requests.get(url, headers=HEADERS)
+    soup = BeautifulSoup(response.text, "html.parser")
     cards = soup.select("div[data-testid='serp-core-classified-card-testid']")
     results = []
 
@@ -90,16 +83,16 @@ def filter_annonces(annonces, keyword, min_price, max_price):
 # Interface Streamlit
 st.set_page_config(page_title="SeLoger Delta", layout="centered")
 st.title("🏡 Suivi des annonces SeLoger")
-st.markdown("Entrez l’URL de recherche SeLoger (avec vos filtres) pour détecter les **nouvelles annonces**.")
+st.markdown("Scraping des annonces visibles sur SeLoger. Fonctionne uniquement avec les pages HTML statiques.")
 
-url = st.text_input("🔗 URL de recherche SeLoger")
+url = st.text_input("🔗 URL de recherche SeLoger", value="https://www.seloger.com/immobilier/achat/immo-lyon-3eme-69/bien-appartement/")
 keyword = st.text_input("🔍 Mot-clé (optionnel)")
 min_price = st.number_input("💰 Prix minimum (€)", min_value=0, step=1000)
 max_price = st.number_input("💰 Prix maximum (€)", min_value=0, step=1000)
 
 if url:
     with st.spinner("🔄 Scraping en cours..."):
-        current_annonces = get_annonces_selenium(url)
+        current_annonces = get_annonces(url)
         previous_annonces = load_previous()
         nouvelles = detect_delta(current_annonces, previous_annonces)
         filtered = filter_annonces(nouvelles, keyword, min_price, max_price)
